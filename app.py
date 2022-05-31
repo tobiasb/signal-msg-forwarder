@@ -21,17 +21,20 @@ while True:
             logger.info('Looking for messages')
             response = requests.get(f"{os.getenv('SIGNAL_API_HOST')}/v1/receive/{os.getenv('SIGNAL_PHONE_NUMBER')}")
             for msg in response.json():
-                envelope = msg['envelope']
+                try:
+                    envelope = msg['envelope']
 
-                logger.info(f"Writing message from {envelope['sourceNumber']}")
+                    logger.info(f"Writing message from {envelope['sourceNumber']}")
 
-                writer.put_item(Item={
-                    'timestamp': envelope['dataMessage']['timestamp'],
-                    'fromNumber': envelope['sourceNumber'],
-                    'fromName': envelope['sourceName'],
-                    'message':  envelope['dataMessage']['message']
-                })
+                    writer.put_item(Item={
+                        'timestamp': envelope['dataMessage']['timestamp'],
+                        'fromNumber': envelope['sourceNumber'],
+                        'fromName': envelope['sourceName'],
+                        'message':  envelope['dataMessage']['message']
+                    })
 
+                except Exception as ex:
+                    logger.error(ex)
             logger.info(f'Done, sleeping for {interval}s')
     except Exception as ex:
         logger.error(ex)
