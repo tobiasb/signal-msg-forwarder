@@ -13,9 +13,11 @@ dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.getenv('TABLE_NAME'))
 table.load()
 
+interval = os.getenv('POLL_INTERVAL')
+
 while True:
     with table.batch_writer() as writer:
-        logger.info('Looking for messages')
+        logger.info('Looking for messages
         response = requests.get(f"{os.getenv('SIGNAL_API_HOST')}/v1/receive/{os.getenv('SIGNAL_PHONE_NUMBER')}")
         for msg in response.json():
             envelope = msg['envelope']
@@ -28,6 +30,5 @@ while True:
                 'fromName': envelope['sourceName'],
                 'message':  envelope['dataMessage']['message']
             })
-
-    logger.info('Done')
-    sleep(60)
+    logger.info(f'Done, sleeping for {interval}s')
+    sleep(int(interval))
