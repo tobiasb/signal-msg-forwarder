@@ -16,19 +16,24 @@ table.load()
 interval = os.getenv('POLL_INTERVAL')
 
 while True:
-    with table.batch_writer() as writer:
-        logger.info('Looking for messages')
-        response = requests.get(f"{os.getenv('SIGNAL_API_HOST')}/v1/receive/{os.getenv('SIGNAL_PHONE_NUMBER')}")
-        for msg in response.json():
-            envelope = msg['envelope']
+    try:
+        with table.batch_writer() as writer:
+            logger.info('Looking for messages')
+            response = requests.get(f"{os.getenv('SIGNAL_API_HOST')}/v1/receive/{os.getenv('SIGNAL_PHONE_NUMBER')}")
+            for msg in response.json():
+                envelope = msg['envelope']
 
-            logger.info(f"Writing message from {envelope['sourceNumber']}")
+                logger.info(f"Writing message from {envelope['sourceNumber']}")
 
-            writer.put_item(Item={
-                'timestamp': envelope['dataMessage']['timestamp'],
-                'fromNumber': envelope['sourceNumber'],
-                'fromName': envelope['sourceName'],
-                'message':  envelope['dataMessage']['message']
-            })
-    logger.info(f'Done, sleeping for {interval}s')
+                writer.put_item(Item={
+                    'timestamp': envelope['dataMessage']['timestamp'],
+                    'fromNumber': envelope['sourceNumber'],
+                    'fromName': envelope['sourceName'],
+                    'message':  envelope['dataMessage']['message']
+                })
+
+            logger.info(f'Done, sleeping for {interval}s')
+    except Exception as ex:
+        logger.error(ex)
+
     sleep(int(interval))
