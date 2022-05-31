@@ -17,7 +17,7 @@ interval = os.getenv('POLL_INTERVAL')
 
 while True:
     with table.batch_writer() as writer:
-        logger.info('Looking for messages
+        logger.info('Looking for messages')
         response = requests.get(f"{os.getenv('SIGNAL_API_HOST')}/v1/receive/{os.getenv('SIGNAL_PHONE_NUMBER')}")
         for msg in response.json():
             envelope = msg['envelope']
