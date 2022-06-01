@@ -27,6 +27,33 @@ table = dynamodb.Table(os.getenv("DYNAMODB_TABLE_NAME"))
 table.load()
 
 interval = os.getenv("POLL_INTERVAL")
+group_name_cache = {}
+
+
+def get_group_name(phone_number, group_id):
+    if not group_id:
+        return None
+
+    key = f"{phone_number}-{group_id}"
+    if key in group_name_cache:
+        return group_name_cache[key]
+
+    try:
+        logger.info(f"Fetching group name for group {group_id}")
+        response = signal_cli_api_session.get(url=f"{os.getenv('SIGNAL_API_HOST')}/v1/groups/{phone_number}")
+
+        if response.status_code != 200:
+            logger.error(f"Error retrieving group name for {phone_number}/{group_id}: HTTP {response.status_code}")
+            return None
+
+        for group in response.json():
+            if group["internal_id"] == group_id:
+                group_name_cache[key] = group["name"]
+
+        return group_name_cache.get(key, None)
+    except Exception as ex:
+        logger.error(ex, exc_info=ex)
+        return None
 
 
 def download_attachment(attachment_id):
@@ -88,6 +115,7 @@ def process_phone_number(phone_number):
 
                 logger.info(f"Writing message from {envelope['sourceNumber']}")
 
+                group_id = data_message.get("groupInfo", {}).get("groupId", None)
                 writer.put_item(
                     Item={
                         "timestamp_utc": data_message["timestamp"],
@@ -95,7 +123,8 @@ def process_phone_number(phone_number):
                         "from_name": envelope["sourceName"],
                         "to_number": phone_number,
                         "message": data_message["message"],
-                        "group_id": data_message.get("groupInfo", {}).get("groupId", None),
+                        "group_id": group_id,
+                        "group_name": get_group_name(phone_number, group_id),
                         "attachments": download_attachments(data_message),
                     }
                 )
