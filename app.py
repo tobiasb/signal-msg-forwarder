@@ -6,6 +6,7 @@ from time import sleep
 
 import boto3
 import requests
+import sentry_sdk
 from requests.adapters import HTTPAdapter
 
 if not (log_level := os.getenv("LOG_LEVEL", None)):
@@ -28,6 +29,15 @@ table.load()
 
 interval = os.getenv("POLL_INTERVAL")
 group_name_cache = {}
+
+
+sentry_sdk.init(
+    os.getenv('SENTRY_URL'),
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for performance monitoring.
+    # We recommend adjusting this value in production.
+    traces_sample_rate=1.0,
+)
 
 
 def get_group_name(phone_number, group_id):
