@@ -38,6 +38,7 @@ sentry_sdk.init(
     # We recommend adjusting this value in production.
     traces_sample_rate=1.0,
 )
+sentry_sdk.set_level("warning")
 
 
 def get_group_name(phone_number, group_id):
