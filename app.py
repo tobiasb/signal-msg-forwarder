@@ -114,6 +114,10 @@ def process_phone_number(phone_number):
 
         for msg in messages:
             try:
+                if not msg.get("envelope", {}).get("dataMessage", None):
+                    logger.warning(f"Message did not have required data:\n{json.dumps(msg, indent=2)}")
+                    continue
+
                 envelope = msg["envelope"]
                 data_message = envelope["dataMessage"]
 
