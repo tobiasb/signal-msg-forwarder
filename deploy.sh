@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -x
+set -ex
 
 CONTAINER_NAME=signalmsgforwarder
 git pull
