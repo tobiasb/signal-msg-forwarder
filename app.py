@@ -2,6 +2,8 @@ import json
 import logging
 import mimetypes
 import os
+import os.path
+import sqlite3
 from time import sleep
 
 import boto3
@@ -23,16 +25,13 @@ signal_phone_numbers = os.getenv("SIGNAL_PHONE_NUMBERS").split(",")
 signal_phone_numbers_to_forward = os.getenv("SIGNAL_PHONE_NUMBERS_TO_FORWARD").split(",")
 
 s3 = boto3.resource("s3")
-dynamodb = boto3.resource("dynamodb")
-table = dynamodb.Table(os.getenv("DYNAMODB_TABLE_NAME"))
-table.load()
 
 interval = os.getenv("POLL_INTERVAL")
 group_name_cache = {}
 
 
 sentry_sdk.init(
-    os.getenv('SENTRY_URL'),
+    os.getenv("SENTRY_URL"),
     # Set traces_sample_rate to 1.0 to capture 100%
     # of transactions for performance monitoring.
     # We recommend adjusting this value in production.
@@ -99,10 +98,12 @@ def download_attachments(data_message):
     return results
 
 
-def process_phone_number(phone_number):
+def process_phone_number(conn, phone_number):
     try:
         logger.info(f"Looking for messages sent to {phone_number}")
-        response = signal_cli_api_session.get(url=f"{os.getenv('SIGNAL_API_HOST')}/v1/receive/{phone_number}?timeout=1")
+        response = signal_cli_api_session.get(
+            url=f"{os.getenv('SIGNAL_API_HOST')}/v1/receive/{phone_number}?timeout=1", timeout=60
+        )
 
         if response.status_code != 200:
             logger.error(f"Error retrieving messages for {phone_number}: HTTP {response.status_code}")
@@ -131,18 +132,34 @@ def process_phone_number(phone_number):
                 logger.info(f"Writing message from {envelope['sourceNumber']}")
 
                 group_id = data_message.get("groupInfo", {}).get("groupId", None)
-                writer.put_item(
-                    Item={
-                        "timestamp_utc": data_message["timestamp"],
-                        "from_number": envelope["sourceNumber"],
-                        "from_name": envelope["sourceName"],
-                        "to_number": phone_number,
-                        "message": data_message["message"],
-                        "group_id": group_id,
-                        "group_name": get_group_name(phone_number, group_id),
-                        "attachments": download_attachments(data_message),
-                    }
+
+                attachments = download_attachments(data_message)
+
+                data = {
+                    "timestamp_utc": data_message["timestamp"],
+                    "from_number": envelope["sourceNumber"],
+                    "from_name": envelope["sourceName"],
+                    "to_number": phone_number,
+                    "message": data_message["message"],
+                    "group_id": group_id,
+                    "group_name": get_group_name(phone_number, group_id),
+                }
+
+                cur = conn.cursor()
+                cur.execute(
+                    """insert into messages (timestamp_utc, from_number, from_name, to_number, message, group_id, group_name)
+                               values (:timestamp_utc, :from_number, :from_name, :to_number, :message, :group_id, :group_name)""",
+                    data,
                 )
+                message_id = cur.lastrowid
+                for attachment in attachments:
+                    attachment["message_id"] = message_id
+                    cur.execute(
+                        """insert into attachments (message_id, content_type, size_byte, location)
+                                values (:message_id, :content_type, :size, :location)""",
+                        attachment,
+                    )
+                conn.commit()
 
             except Exception as ex:
                 logger.error(ex, exc_info=ex)
@@ -151,10 +168,26 @@ def process_phone_number(phone_number):
         logger.error(ex, exc_info=ex)
 
 
+db_file_name = os.getenv("DB_FILE_NAME")
+if not os.path.exists(db_file_name):
+    logger.info(f"Database file {db_file_name} does not exist. Creating database.")
+    with sqlite3.connect(db_file_name) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """create table messages
+                    (message_id INTEGER PRIMARY KEY ASC AUTOINCREMENT, timestamp_utc INTEGER, from_number TEXT, from_name TEXT, to_number TEXT, message TEXT, group_id TEXT, group_name TEXT)"""
+        )
+        cur.execute(
+            """create table attachments
+                    (message_id INTEGER, content_type TEXT, size_byte INTEGER, location TEXT, FOREIGN KEY(message_id) REFERENCES messages(message_id))"""
+        )
+        conn.commit()
+
+
 while True:
-    with table.batch_writer() as writer:
+    with sqlite3.connect(db_file_name) as conn:
         for phone_number in signal_phone_numbers:
-            process_phone_number(phone_number)
+            process_phone_number(conn, phone_number)
 
     logger.info(f"Done, sleeping for {interval}s")
     sleep(int(interval))
