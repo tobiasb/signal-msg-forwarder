@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -ex
-
 echo "Messages:"
 echo "-----------------------------------------"
 sqlite3 "$1" "select * from messages;"
